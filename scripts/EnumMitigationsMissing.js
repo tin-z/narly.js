@@ -1,6 +1,11 @@
 /***
  *
  * @kzalloc1(https://github.com/tin-z)
+ *
+ * Run:
+ * .load jsprovider.dll
+ * .scriptrun <Path>/EnumMitigationsMissing.js
+ *
  * **/
 
 
@@ -10,7 +15,22 @@
 
 var DBG = false;
 var VRBOSE = false;
+var dout = host.diagnostics.debugLog;
 
+
+// https://github.com/hugsy/windbg_js_scripts/blob/main/scripts/PageExplorer.js
+function hex(x){ return x.toString(16); }
+function i64(x){ return host.parseInt64(`${x}`); }
+function system(x){ return host.namespace.Debugger.Utility.Control.ExecuteCommand(x); }
+function ptrsize(){ return host.namespace.Debugger.State.PseudoRegisters.General.ptrsize; }
+function pagesize(){ return host.namespace.Debugger.State.PseudoRegisters.General.pagesize; }
+function IsX64(){ return ptrsize() === 8;}
+function u32(x, k=false){if(!k) return host.memory.readMemoryValues(x, 1, 4)[0];let cmd = `!dd 0x${x.toString(16)}`;let res = system(cmd)[0].split(" ").filter(function(v,i,a){return v.length > 0 && v != "#";});return i64(`0x${res[1].replace("`","")}`);}
+function u64(x, k=false){if(!k) return host.memory.readMemoryValues(x, 1, 8)[0];let cmd = `!dq 0x${x.toString(16)}`;let res = system(cmd)[0].split(" ").filter(function(v,i,a){return v.length > 0 && v != "#";});return i64(`0x${res[1].replace("`","")}`);}
+function poi(x){ if(IsX64()) return u64(x); else return u32(x);}
+
+
+function u16(x, k=false){if(!k) return host.memory.readMemoryValues(x, 1, 2)[0];let cmd = `!dw 0x${x.toString(16)}`;let res = system(cmd)[0].split(" ").filter(function(v,i,a){return v.length > 0 && v != "#";});return i64(`0x${res[1].replace("`","")}`);}
 
 
 /***
@@ -19,38 +39,68 @@ var VRBOSE = false;
 
 function initializeScript()
 {
-    host.diagnostics.debugLog("***> Hello World! \n");
+    dout("***> Hello World! \n");
 }
 
 
 function invokeScript()
 {
   var object = host.namespace.Debugger.Sessions.First().Processes.First().Modules;
-  host.diagnostics.debugLog("\n[-] Start..\n");
+  dout("\n[-] Start..\n");
 
   for (var module of object)
   {
+    if (module.Contents == null) {
+      if (VRBOSE) {
+        dout("Finding headers of module '" + module.Name + "'\n");
+      }
+      if (! add_headers_manual(module))
+      {
+        continue;
+      }
+    }
+
     var module_obj = new ModuleWrap(module.Name, module.Contents.Headers.FileHeader.Characteristics, module.Contents.Headers.OptionalHeader.DllCharacteristics);
     var str_tmp = module_obj.toString();
     if (VRBOSE) {
-      host.diagnostics.debugLog(str_tmp);
-      host.diagnostics.debugLog("\n");
+      dout(str_tmp);
+      dout("\n");
     }
   }
 
   summary();
-  host.diagnostics.debugLog("\n[+] Done!\n");
+  dout("\n[+] Done!\n");
 }
 
 
 function summary()
 {
-  host.diagnostics.debugLog("\n" + "Modules missing mitigations:\n");
+  dout("\n" + "Modules missing mitigations:\n");
   for(var k in dllchars_list) {
-    host.diagnostics.debugLog("\n" + "  NO-" + dllchars_list[k].id + " : " + missing_dllchars_list[k] + "\n");
+    dout("\n" + "  NO-" + dllchars_list[k].id + " : " + missing_dllchars_list[k] + "\n");
   }
 }
 
+
+function add_headers_manual(module)
+{
+  try {
+    var baddr = module.BaseAddress;
+    var e_lfanew = poi(baddr + 0x3c);
+    var offset_opt_header = baddr + e_lfanew + 0x18;
+    var offset_fileheader = baddr + e_lfanew + 0x4;
+    var offset_dllchar = offset_opt_header + 0x46;
+    var offset_char = offset_fileheader + 0x12;
+    var DllCharacteristics = u16(offset_dllchar);
+    var Characteristics = u16(offset_char);
+    module.Contents = {"Headers":{"OptionalHeader":{"DllCharacteristics":DllCharacteristics}}};
+    module.Contents.Headers["FileHeader"] = {"Characteristics": Characteristics};
+  } catch (e) {
+    dout(e);	
+    return false;
+  }
+  return true;
+}
 
 
 /*** 
