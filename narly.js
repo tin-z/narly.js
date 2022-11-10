@@ -137,7 +137,6 @@ function main(mod_name_arg, print_missing_list)
 
       var module_obj = new ModuleWrap(baddr, eaddr, name, path_name, charact, dll_char, gs_is_present, safeseh_is_present);
       module_parsed[name] = module_obj;
-      module_parsed[path_name] = module_obj;
       var str_tmp = module_obj.toString();
     }
 
