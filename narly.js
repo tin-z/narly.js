@@ -71,7 +71,7 @@ function hex_out(x){ return Number(x).toString(16).padStart(8, "0"); }
 
 function initializeScript()
 {
-    dout("***> Hello World! \n");
+  dout("***> Hello World! \n");
 }
 
 
@@ -80,69 +80,75 @@ var module_parsed = {};
 
 function main(mod_name_arg, print_missing_list)
 {
+  var object = host.namespace.Debugger.Sessions.First().Processes.First().Modules;
+
   var IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG = 10;  
   var SecurityCookie_offset = 60;
   var SEHandlerTable_offset = SecurityCookie_offset + 4;
+
   if (IsX64()) {
     SecurityCookie_offset = 88;
-	SEHandlerTable_offset = SecurityCookie_offset + 8;
+    SEHandlerTable_offset = SecurityCookie_offset + 8;
   }
 
   if (!already_eval) {
-	  var object = host.namespace.Debugger.Sessions.First().Processes.First().Modules;
-	  dout("\n[-] Start..\n");
+    dout("\n[-] Start..\n");
 
-	  for (var module of object)
-	  {
-		// for testing
-		// delete module.Contents;
-		
-		if (module.Contents == null) {
-		  if (! add_headers_manual(module))
-		  {
-			continue;
-		  }
-		}
+    for (var module of object) {
+      // for testing
+      // delete module.Contents;
+      
+      if (module.Contents == null) {
+        if (! add_headers_manual(module))
+        {
+          dout("[!] Some issue parsing '" + module.Name + "' ..skipping it\n");
+          continue;
+        }
+      }
 
-		var baddr = module.BaseAddress;
-		var eaddr = baddr + module.Size;
-		var path_name = module.Name;
-		var tmplist = path_name.split("\\");
-		var name = tmplist[tmplist.length-1];
-		
-		var charact = module.Contents.Headers.FileHeader.Characteristics;
-		var dll_char = module.Contents.Headers.OptionalHeader.DllCharacteristics;
+      var baddr = module.BaseAddress;
+      var eaddr = baddr + module.Size;
+      var path_name = module.Name;
+      var tmplist = path_name.split("\\");
+      var name = tmplist[tmplist.length-1];
+      
+      var charact = module.Contents.Headers.FileHeader.Characteristics;
+      var dll_char = module.Contents.Headers.OptionalHeader.DllCharacteristics;
 
-		var gs_is_present = false;
-		var safeseh_is_present = false;
-		var dirs = module.Contents.Headers.OptionalHeader.DataDirectory;
-		if (dirs.length > 10) {
-			var gs_vaddr = dirs[IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG].VirtualAddress;
-			if (gs_vaddr > 0) {
-				var SecurityCookie = poi(gs_vaddr + baddr + SecurityCookie_offset);
-				var SEHandlerTable = poi(gs_vaddr + baddr + SEHandlerTable_offset);
-				if (SecurityCookie != 0) {
-					gs_is_present = true;
-				}
-				if (SEHandlerTable != 0) {
-					safeseh_is_present = true;
-				}				
-			}
-		}
+      var gs_is_present = false;
+      var safeseh_is_present = false;
+      var dirs = module.Contents.Headers.OptionalHeader.DataDirectory;
 
-		var module_obj = new ModuleWrap(baddr, eaddr, name, path_name, charact, dll_char, gs_is_present, safeseh_is_present);
-		module_parsed[name] = module_obj;
-		module_parsed[path_name] = module_obj;
-		var str_tmp = module_obj.toString();
-	  }
-	  already_eval = true;
-	  dout("\n[+] Done!\n");
+      if (dirs.length > 10) {
+        var gs_vaddr = dirs[IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG].VirtualAddress;
+
+        if (gs_vaddr > 0) {
+          var SecurityCookie = poi(gs_vaddr + baddr + SecurityCookie_offset);
+          var SEHandlerTable = poi(gs_vaddr + baddr + SEHandlerTable_offset);
+
+          if (SecurityCookie != 0) {
+            gs_is_present = true;
+          }
+          if (SEHandlerTable != 0) {
+            safeseh_is_present = true;
+          }				
+        }
+      }
+
+      var module_obj = new ModuleWrap(baddr, eaddr, name, path_name, charact, dll_char, gs_is_present, safeseh_is_present);
+      module_parsed[name] = module_obj;
+      module_parsed[path_name] = module_obj;
+      var str_tmp = module_obj.toString();
+    }
+
+    already_eval = true;
+    dout("\n[+] Done!\n");
   }
 
   if (print_missing_list) {
     summary();
   } else {
-	print_narly_format(mod_name_arg);
+    print_narly_format(mod_name_arg);
   }
 }
 
@@ -161,16 +167,19 @@ function summary()
 function print_narly_format(mod_name_arg)
 {
   if (mod_name_arg != ""){
-	if (!(mod_name_arg in module_parsed)) {
-	  dout("[X] Can't find the module-name given: '" + mod_name_arg + "'\n\n");
-	} else {
+
+    if (!(mod_name_arg in module_parsed)) {
+      dout("[X] Can't find the module-name given: '" + mod_name_arg + "'\n\n");
+
+    } else {
       dout(module_parsed[mod_name_arg].toString() + "\n");
-	}
+    }
   } else {
+
     for(var k in module_parsed) {
-	  dout(module_parsed[k].toString());
-	}
-	dout("\n");
+	    dout(module_parsed[k].toString());
+	  }
+	  dout("\n");
   }
 }
 
@@ -184,20 +193,20 @@ function add_headers_manual(module)
     var offset_fileheader = baddr + e_lfanew + 0x4;
     var offset_dllchar = offset_opt_header + 0x46;
     var offset_char = offset_fileheader + 0x12;
-	
+    
     var DllCharacteristics = u16(offset_dllchar);
     var Characteristics = u16(offset_char);
     module.Contents = {"Headers":{"OptionalHeader":{"DllCharacteristics":DllCharacteristics}}};
     module.Contents.Headers["FileHeader"] = {"Characteristics": Characteristics};
     module.Contents.Headers.OptionalHeader["DataDirectory"] = [0,0,0,0,0,0,0,0,0,0];
 
-	// fix /GS and /SafeSEH check
-	var offset_number_of_rva_and_size = baddr + e_lfanew + 0x74;	
-	var number_of_rva_and_size = u32(offset_number_of_rva_and_size);
-	if (number_of_rva_and_size > 0xa) {
-		var va_load_config = poi(offset_number_of_rva_and_size + (4*10));
-		module.Contents.Headers.OptionalHeader.DataDirectory[0xa]={"VirtualAddress":va_load_config};
-	}
+	  // fix /GS and /SafeSEH check
+	  var offset_number_of_rva_and_size = baddr + e_lfanew + 0x74;	
+	  var number_of_rva_and_size = u32(offset_number_of_rva_and_size);
+	  if (number_of_rva_and_size > 0xa) {
+	    var va_load_config = poi(offset_number_of_rva_and_size + (4*10));
+	    module.Contents.Headers.OptionalHeader.DataDirectory[0xa]={"VirtualAddress":va_load_config};
+	  }
 
   } catch (e) {
     dout(e);	
@@ -232,28 +241,28 @@ var dllchars_list = {
 };
 
 var missing_dllchars_list = {
-    0x0020 : "", 
-    0x0040 : "",
-    0x0080 : "",
-    0x0100 : "",
-    0x0400 : "",
-    0x1000 : "",
-    0x4000 : "",
-	"/GS" : "",
-	"/SafeSEH" : ""
+  0x0020 : "", 
+  0x0040 : "",
+  0x0080 : "",
+  0x0100 : "",
+  0x0400 : "",
+  0x1000 : "",
+  0x4000 : "",
+  "/GS" : "",
+  "/SafeSEH" : ""
 };
 
 class ModuleWrap {
 
   constructor(mod_baddr, mod_eaddr, mod_name, path_name, mod_characteristics, mod_dllcharacteristics, gs_is_present, safeseh_is_present){
-	this.baddr = mod_baddr;
-	this.eaddr = mod_eaddr;
+    this.baddr = mod_baddr;
+    this.eaddr = mod_eaddr;
     this.mod_name = mod_name;
-	this.path_name = path_name;
+    this.path_name = path_name;
     this.mod_characteristics = mod_characteristics; 
     this.mod_dllcharacteristics = mod_dllcharacteristics;
-	this.gs_is_present = gs_is_present;
-	this.safeseh_is_present = safeseh_is_present;	
+    this.gs_is_present = gs_is_present;
+    this.safeseh_is_present = safeseh_is_present;	
     this.dllchars_flgs = {
       0x0020 : 1, 
       0x0040 : 1,
@@ -268,36 +277,35 @@ class ModuleWrap {
   }
 
   check() {
-   for(var k in dllchars_list) {
-    this.dllchars_flgs[k] = k & this.mod_dllcharacteristics;
-   } 
+    for(var k in dllchars_list) {
+      this.dllchars_flgs[k] = k & this.mod_dllcharacteristics;
+    } 
   }
 
   toString() {
-	var str_tmp = hex_out(this.baddr) + " " + hex_out(this.eaddr) + " " + this.mod_name.padEnd(16, " ");
-	str_tmp += " (" + this.path_name + ")\n";
-
-	str_tmp += "/SafeSEH:" + ((this.safeseh_is_present ) ? "OK" : "X") + "  ";
-	str_tmp += "/GS:" + ((this.gs_is_present ) ? "OK" : "X") + "  ";
-
+    var str_tmp = hex_out(this.baddr) + " " + hex_out(this.eaddr) + " " + this.mod_name.padEnd(16, " ");
+    str_tmp += " (" + this.path_name + ")\n";
+    
+    str_tmp += "/SafeSEH:" + ((this.safeseh_is_present ) ? "OK" : "X") + "  ";
+    str_tmp += "/GS:" + ((this.gs_is_present ) ? "OK" : "X") + "  ";
+    
     for(var k in dllchars_list) {
       var dllchars_tmp = dllchars_list[k];
       str_tmp += dllchars_tmp.id + ":" + ((this.dllchars_flgs[k] ) ? "OK" : "X") + "  ";
-
+    
       if (! this.dllchars_flgs[k] && ! this.parsed) {
         missing_dllchars_list[k] += "\n" + "    " + this.path_name;
       }
     }
-	
-	if (! this.parsed) {
-	  if (! this.gs_is_present)
-	    missing_dllchars_list["/GS"] += "\n" + "    " + this.path_name;
-	  if (! this.safeseh_is_present)
-	    missing_dllchars_list["/SafeSEH"] += "\n" + "    " + this.path_name;
-	}
-	
-	str_tmp += "\n\n";
-
+  
+    if (! this.parsed) {
+      if (! this.gs_is_present)
+        missing_dllchars_list["/GS"] += "\n" + "    " + this.path_name;
+      if (! this.safeseh_is_present)
+        missing_dllchars_list["/SafeSEH"] += "\n" + "    " + this.path_name;
+    }
+  
+    str_tmp += "\n\n";
     this.parsed = true;
     return str_tmp;
   }
@@ -351,5 +359,6 @@ function initializeScript()
   __helper();
   
   return [new host.apiVersionSupport(1, 0),
-    new host.functionAlias(__Narly, "nmod")];
+          new host.functionAlias(__Narly, "nmod")];
 }
+
