@@ -160,6 +160,7 @@ function summary()
   }
   dout("\n" + "  NO-GS : " + missing_dllchars_list["/GS"] + "\n");
   dout("\n" + "  NO-SafeSEH : " + missing_dllchars_list["/SafeSEH"] + "\n");
+  dout("\n" + "  NO-ASLR-ASLR64 (Both) : " + missing_dllchars_list["/ASLR-ASLR64"] + "\n");
   dout("\n");
 }
 
@@ -248,7 +249,8 @@ var missing_dllchars_list = {
   0x1000 : "",
   0x4000 : "",
   "/GS" : "",
-  "/SafeSEH" : ""
+  "/SafeSEH" : "",
+  "/ASLR-ASLR64" : ""
 };
 
 class ModuleWrap {
@@ -283,8 +285,11 @@ class ModuleWrap {
 
   toString() {
     var str_tmp = hex_out(this.baddr) + " " + hex_out(this.eaddr) + " " + this.mod_name.padEnd(16, " ");
-    str_tmp += " (" + this.path_name + ")\n";
-    
+    str_tmp += " (" + this.path_name + ")";
+
+    var entry_module = str_tmp;
+
+    str_tmp += "\n";
     str_tmp += "/SafeSEH:" + ((this.safeseh_is_present ) ? "OK" : "X") + "  ";
     str_tmp += "/GS:" + ((this.gs_is_present ) ? "OK" : "X") + "  ";
     
@@ -293,15 +298,17 @@ class ModuleWrap {
       str_tmp += dllchars_tmp.id + ":" + ((this.dllchars_flgs[k] ) ? "OK" : "X") + "  ";
     
       if (! this.dllchars_flgs[k] && ! this.parsed) {
-        missing_dllchars_list[k] += "\n" + "    " + this.path_name;
+        missing_dllchars_list[k] += "\n" + "    " + entry_module;
       }
     }
   
     if (! this.parsed) {
       if (! this.gs_is_present)
-        missing_dllchars_list["/GS"] += "\n" + "    " + this.path_name;
+        missing_dllchars_list["/GS"] += "\n" + "    " + entry_module;
       if (! this.safeseh_is_present)
-        missing_dllchars_list["/SafeSEH"] += "\n" + "    " + this.path_name;
+        missing_dllchars_list["/SafeSEH"] += "\n" + "    " + entry_module;
+      if (! (this.dllchars_flgs[0x0020] | this.dllchars_flgs[0x0040]) )
+        missing_dllchars_list["/ASLR-ASLR64"] += "\n" + "    " + entry_module;
     }
   
     str_tmp += "\n\n";
